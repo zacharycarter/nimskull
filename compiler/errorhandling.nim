@@ -123,22 +123,13 @@ proc newErrorAux(
   result = newNodeIT(nkError, wrongNode.info,
                      newType(tyError, ItemId(module: -2, item: -1), nil))
 
-  # this if/else branch needs to set `wrongNodePos` and `prevErroPos`
-  if wrongNode.kind == nkError:
-    # wrapping an error in another error
-    result.add wrongNode[wrongNodePos] # fetch the real one from the previous
-    result.add wrongNode # the wrongNode param is the prevError
-
-    result.info = wrongNode[wrongNodePos].info # fix line info
-  else:
-    # not an error, we are wrapping a regular node
-    result.add wrongNode
-    let prevError = errorSubNode(wrongNode) # find buried errors
-    result.add:
-      if prevError.isNil:
-        noPrevError
-      else:
-        prevError
+  result.add wrongNode
+  let prevError = errorSubNode(wrongNode) # find buried errors
+  result.add:
+    if prevError.isNil:
+      noPrevError
+    else:
+      prevError
   result.add newIntNode(nkIntLit, ord(k)) # errorKindPos
   result.add newStrNode(inst.filename, wrongNode.info) # compilerInfoPos
 

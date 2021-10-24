@@ -28,7 +28,7 @@ proc `[]`[T](s: var openArray[T]; i: BackwardsIndex): var T
 template `[]`(s: string; i: int): char
   first type mismatch at position: 0
 
-expression: `[]`(buf, error pos)
+expression: `[]`(buf, pos)
 t10735.nim(40, 10) Error: undeclared identifier: 'pos'
 t10735.nim(40, 10) Error: expression 'pos' has no type (or is ambiguous)
 t10735.nim(40, 9) Error: selector must be of an ordinal type, float, or string

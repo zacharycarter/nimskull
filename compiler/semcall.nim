@@ -287,11 +287,9 @@ proc notFoundError(c: PContext, n: PNode, errors: CandidateErrors): PNode =
   ## returns an nkError
   if c.config.m.errorOutputs == {}:
     # fail fast:
-    # globalError(c.config, n.info, "type mismatch")
     result = newError(n, RawTypeMismatchError)
     return
   if errors.len == 0:
-    # localError(c.config, n.info, "expression '$1' cannot be called" % n[0].renderTree)
     result = newError(n, "expression '$1' cannot be called" % n[0].renderTree)
     return
 
@@ -301,8 +299,7 @@ proc notFoundError(c: PContext, n: PNode, errors: CandidateErrors): PNode =
   msg.add('>')
   if candidates != "":
     msg.add("\n" & errButExpected & "\n" & candidates)
-  result = newError(n, msg & "\nexpression: " & $n)
-  # localError(c.config, n.info, msg & "\nexpression: " & $n)
+  result = newError(n, msg & "\nexpression: " & n.renderTree({renderWithoutErrorPrefix}))
 
 proc bracketNotFoundError(c: PContext; n: PNode) =
   var errors: CandidateErrors = @[]
@@ -437,25 +434,28 @@ proc resolveOverloads(c: PContext, n, orig: PNode,
     if overloadsState == csEmpty and result.state == csEmpty:
       if errorsEnabled and
          efNoUndeclared notin flags: # for tests/pragmas/tcustom_pragma.nim
-        template impl() =
-          # xxx adapt/use errorUndeclaredIdentifierHint(c, n, f.ident)
-          localError(c.config, n.info, getMsgDiagnostic(c, flags, n, f))
         if n[0] != nil and n[0].kind == nkIdent and n[0].ident.s in [".", ".="] and n[2].kind == nkIdent:
           let sym = n[1].typ.typSym
           if sym == nil:
-            impl()
+            # xxx adapt/use errorUndeclaredIdentifierHint(c, n, f.ident)
+            let msg = getMsgDiagnostic(c, flags, n, f)
+            result.call = newError(n, msg)
           else:
             let field = n[2].ident.s
             let msg = errUndeclaredField % field & " for type " & getProcHeader(c.config, sym)
-            localError(c.config, orig[2].info, msg)
+            result.call = newError(n, msg)
+            result.call.info = orig[2].info # set the correct info
         else:
-          impl()
+          # xxx adapt/use errorUndeclaredIdentifierHint(c, n, f.ident)
+          let msg = getMsgDiagnostic(c, flags, n, f)
+          result.call = newError(n, msg)
       return
     elif result.state != csMatch:
       if nfExprCall in n.flags:
         if errorsEnabled:
-          localError(c.config, n.info, "expression '$1' cannot be called" %
-                     renderTree(n, {renderNoComments}))
+          let msg = "expression '$1' cannot be called" %
+                     renderTree(n, {renderNoComments})
+          result.call = newError(n, msg)
       else:
         if {nfDotField, nfDotSetter} * n.flags != {}:
           # clean up the inserted ops
@@ -644,6 +644,8 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
           result = nil
       elif efNoUndeclared notin flags:
         result = notFoundError(c, n, errors)
+      else:
+        result = r.call # xxx: hope this is nkError
   else:
     if efExplain notin flags:
       # repeat the overload resolution,
@@ -660,6 +662,8 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
         result = nil
     elif efNoUndeclared notin flags:
       result = notFoundError(c, n, errors)
+    else:
+      result = r.call # xxx: hope this is nkError
 
 proc explicitGenericInstError(c: PContext; n: PNode): PNode =
   localError(c.config, getCallLineInfo(n), errCannotInstantiateX % renderTree(n))

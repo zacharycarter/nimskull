@@ -2010,13 +2010,15 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
     if a.kind == tyGenericParam and tfWildcard in a.flags:
       a.assignType(f)
       # put(m.bindings, f, a)
-      return argSemantized
+      result = argSemantized
+      return
 
     if a.kind == tyStatic:
       if m.callee.kind == tyGenericBody and
          a.n == nil and
          tfGenericTypeParam notin a.flags:
-        return newNodeIT(nkType, argOrig.info, makeTypeFromExpr(c, arg))
+        result = newNodeIT(nkType, argOrig.info, makeTypeFromExpr(c, arg))
+        return
     else:
       var evaluated = c.semTryConstExpr(c, arg)
       if evaluated != nil:
@@ -2047,14 +2049,16 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
     # XXX: duplicating this is ugly, but we cannot (!) move this
     # directly into typeRel using return-like templates
     incMatches(m, r)
-    if f.kind == tyTyped:
-      return arg
-    elif f.kind == tyTypeDesc:
-      return arg
-    elif f.kind == tyStatic and arg.typ.n != nil:
-      return arg.typ.n
-    else:
-      return argSemantized # argOrig
+    result =
+      if f.kind == tyTyped:
+        arg
+      elif f.kind == tyTypeDesc:
+        arg
+      elif f.kind == tyStatic and arg.typ.n != nil:
+        arg.typ.n
+      else:
+        argSemantized # argOrig
+    return
 
   # If r == isBothMetaConvertible then we rerun typeRel.
   # bothMetaCounter is for safety to avoid any infinite loop,
@@ -2071,7 +2075,8 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
     if arg.kind in {nkProcDef, nkFuncDef, nkIteratorDef} + nkLambdaKinds:
       result = c.semInferredLambda(c, m.bindings, arg)
     elif arg.kind != nkSym:
-      return nil
+      result = nil
+      return
     else:
       let inferred = c.semGenerateInstance(c, arg.sym, m.bindings, arg.info)
       result = newSymNode(inferred, arg.info)
@@ -2104,7 +2109,8 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
     if arg.kind in {nkProcDef, nkFuncDef, nkIteratorDef} + nkLambdaKinds:
       result = c.semInferredLambda(c, m.bindings, arg)
     elif arg.kind != nkSym:
-      return nil
+      result = nil
+      return
     else:
       let inferred = c.semGenerateInstance(c, arg.sym, m.bindings, arg.info)
       result = newSymNode(inferred, arg.info)
@@ -2144,7 +2150,8 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
     if a.kind in {tyProxy, tyUnknown}:
       inc(m.genericMatches)
       m.fauxMatch = a.kind
-      return arg
+      result = arg
+      return
     elif a.kind == tyVoid and f.matchesVoidProc and argOrig.kind == nkStmtList:
       # lift do blocks without params to lambdas
       let p = c.graph
@@ -2155,7 +2162,8 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
         inc m.genericMatches
         put(m, f, lifted.typ)
       inc m.convMatches
-      return implicitConv(nkHiddenStdConv, f, lifted, m, c)
+      result = implicitConv(nkHiddenStdConv, f, lifted, m, c)
+      return
     result = userConvMatch(c, m, f, a, arg)
     # check for a base type match, which supports varargs[T] without []
     # constructor in a call:
@@ -2416,7 +2424,7 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
       arg = paramTypesMatch(m, formal.typ, n[a].typ,
                                 n[a][1], n[a][1])
       m.firstMismatch.kind = kTypeMismatch
-      if arg == nil:
+      if arg == nil or arg.kind == nkError:
         noMatch()
       checkConstraint(n[a][1])
       if m.baseTypeMatch:
@@ -2452,7 +2460,7 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
           n[a] = prepareOperand(c, formal.typ, n[a])
           arg = paramTypesMatch(m, formal.typ, n[a].typ,
                                     n[a], nOrig[a])
-          if arg != nil and m.baseTypeMatch and container != nil:
+          if arg != nil and arg.kind != nkError  and m.baseTypeMatch and container != nil:
             container.add arg
             incrIndexType(container.typ)
             checkConstraint(n[a])
@@ -2480,6 +2488,8 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
             setSon(m.call, formal.position + 1, container)
           else:
             incrIndexType(container.typ)
+          if n[a].kind == nkError:
+            noMatch()
           container.add n[a]
         else:
           m.baseTypeMatch = false
@@ -2487,7 +2497,8 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
           n[a] = prepareOperand(c, formal.typ, n[a])
           arg = paramTypesMatch(m, formal.typ, n[a].typ,
                                     n[a], nOrig[a])
-          if arg == nil or arg.kind == nkError:
+
+          if arg == nil or arg.kind == nkError or n[a].kind == nkError:
             noMatch()
           if m.baseTypeMatch:
             assert formal.typ.kind == tyVarargs

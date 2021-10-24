@@ -81,7 +81,8 @@ proc errorToString*(
   of WrappedError:
     result = ""
 
-iterator walkErrors*(config: ConfigRef; n: PNode): PNode =
+iterator walkErrorsOld*(config: ConfigRef; n: PNode): PNode {.
+  deprecated: "linear error traversal is likely not useful".} =
   ## traverses previous errors and yields errors from  innermost to outermost.
   ## this is a linear traversal and two, or more, sibling errors will result in
   ## only the first error (per `PNode.sons`) being yielded.
@@ -91,6 +92,33 @@ iterator walkErrors*(config: ConfigRef; n: PNode): PNode =
   while errNodes[^1][prevErrorPos] != nil and errNodes[^1][prevErrorPos].kind != nkEmpty:
     # check nkEmpty and not noPrevNode because tree copies break references
     errNodes.add errNodes[^1][prevErrorPos]
+  
+  # report from last to first (deepest in tree to highest)
+  for i in 1..errNodes.len:
+    # reverse index so we go from the innermost to outermost
+    let e = errNodes[^i]
+    if e.errorKind == WrappedError: continue
+    yield e
+
+proc buildErrorList(n: PNode, errs: var seq[PNode]) =
+  ## creates a list (`errs` seq) from least specific to most specific
+  case n.kind
+  of nkEmpty..nkNilLit:
+    discard
+  of nkError:
+    errs.add n
+    buildErrorList(n[wrongNodePos], errs)
+  else:
+    for i in countdown(n.len - 1, 0):
+      buildErrorList(n[i], errs)
+
+iterator walkErrors*(config: ConfigRef; n: PNode): PNode =
+  ## traverses previous errors and yields errors from  innermost to outermost.
+  ## this is a linear traversal and two, or more, sibling errors will result in
+  ## only the first error (per `PNode.sons`) being yielded.
+  
+  var errNodes: seq[PNode] = @[]
+  buildErrorList(n, errNodes)
   
   # report from last to first (deepest in tree to highest)
   for i in 1..errNodes.len:

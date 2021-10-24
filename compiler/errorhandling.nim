@@ -63,6 +63,10 @@ type
     # General Type Checks
     ExpressionHasNoType 
       ## an expression has not type or is ambiguous
+    
+    WrappedError
+      ## there is no meaningful error to construct, but there is an error
+      ## further down the AST that invalidates the whole
 
 type InstantiationInfo* = typeof(instantiationInfo())
   ## type alias for instantiation information
@@ -156,3 +160,11 @@ proc newError*(wrongNode: PNode; msg: string): PNode =
   ## create an `nkError` node with a `CustomError` message `msg`
   newErrorAux(
     wrongNode, CustomError, instLoc(), newStrNode(msg, wrongNode.info))
+
+proc wrapErrorInSubTree*(wrongNodeContainer: PNode): PNode =
+  ## `wrongNodeContainer` doesn't directly have an error but one exists further
+  ## down the tree, this is used to wrap the `wrongNodeContainer` in an nkError
+  ## node but no message will be reported for it.
+  var e = errorSubNode(wrongNodeContainer)
+  assert e != nil, "there must be an error node within"
+  result = newErrorAux(wrongNodeContainer, WrappedError, instLoc())

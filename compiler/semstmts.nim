@@ -2242,8 +2242,10 @@ proc inferConceptStaticParam(c: PContext, inferred, n: PNode) =
 proc semStmtList(c: PContext, n: PNode, flags: TExprFlags): PNode =
   result = n
   result.transitionSonsKind(nkStmtList)
-  var voidContext = false
-  var last = n.len-1
+  var
+    voidContext = false
+    last = n.len-1
+    hasError = false
   # by not allowing for nkCommentStmt etc. we ensure nkStmtListExpr actually
   # really *ends* in the expression that produces the type: The compiler now
   # relies on this fact and it's too much effort to change that. And arguably
@@ -2254,6 +2256,8 @@ proc semStmtList(c: PContext, n: PNode, flags: TExprFlags): PNode =
   for i in 0..<n.len:
     var x = semExpr(c, n[i], flags)
     n[i] = x
+    if efNoSemCheck notin flags and x.kind == nkError:
+      hasError = true
     if c.matchedConcept != nil and x.typ != nil and
         (nfFromTemplate notin n.flags or i != last):
       case x.typ.kind
@@ -2307,6 +2311,9 @@ proc semStmtList(c: PContext, n: PNode, flags: TExprFlags): PNode =
         not (result.comment[0] == '#' and result.comment[1] == '#'):
       # it is an old-style comment statement: we replace it with 'discard ""':
       prettybase.replaceComment(result.info)
+
+  if hasError:
+    result = wrapErrorInSubTree(result)
 
 proc semStmt(c: PContext, n: PNode; flags: TExprFlags): PNode =
   if efInTypeof in flags:

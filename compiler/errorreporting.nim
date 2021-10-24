@@ -78,6 +78,8 @@ proc errorToString*(
     result = "expression '$1' has no type (or is ambiguous)" % [
         n[firstArgPos].renderTree(rf)
       ]
+  of WrappedError:
+    result = ""
 
 iterator walkErrors*(config: ConfigRef; n: PNode): PNode =
   ## traverses previous errors and yields errors from  innermost to outermost.
@@ -93,4 +95,6 @@ iterator walkErrors*(config: ConfigRef; n: PNode): PNode =
   # report from last to first (deepest in tree to highest)
   for i in 1..errNodes.len:
     # reverse index so we go from the innermost to outermost
-    yield errNodes[^i]
+    let e = errNodes[^i]
+    if e.errorKind == WrappedError: continue
+    yield e

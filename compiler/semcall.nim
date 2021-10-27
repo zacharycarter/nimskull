@@ -645,6 +645,7 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
       elif efNoUndeclared notin flags:
         result = notFoundError(c, n, errors)
       else:
+        assert r.call.kind == nkError
         result = r.call # xxx: hope this is nkError
   else:
     if efExplain notin flags:
@@ -663,6 +664,7 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
     elif efNoUndeclared notin flags:
       result = notFoundError(c, n, errors)
     else:
+      assert r.call.kind == nkError
       result = r.call # xxx: hope this is nkError
 
 proc explicitGenericInstError(c: PContext; n: PNode): PNode =

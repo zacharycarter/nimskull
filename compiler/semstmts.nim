@@ -863,6 +863,7 @@ proc handleCaseStmtMacro(c: PContext; n: PNode; flags: TExprFlags): PNode =
     of skTemplate: result = semTemplateExpr(c, toExpand, match, flags)
     else: result = nil
   else:
+    assert r.call.kind == nkError
     result = r.call # xxx: hope this is nkError
   # this would be the perfectly consistent solution with 'for loop macros',
   # but it kinda sucks for pattern matching as the matcher is not attached to

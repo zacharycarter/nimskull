@@ -147,7 +147,7 @@ proc initCandidate*(ctx: PContext, c: var TCandidate, callee: PSym,
       c.calleeScope = 1
   else:
     c.calleeScope = calleeScope
-  c.diagnostics = @[] # if diagnosticsEnabled: @[] else: nil
+  c.diagnostics = @[]
   c.diagnosticsEnabled = diagnosticsEnabled
   c.magic = c.calleeSym.magic
   initIdTable(c.bindings)
@@ -730,8 +730,8 @@ proc matchUserTypeClass*(m: var TCandidate; ff, a: PType): PType =
     diagnostics: seq[string]
     errorPrefix: string
     flags: TExprFlags = {}
-    collectDiagnostics = m.diagnosticsEnabled or
-                         sfExplain in typeClass.sym.flags
+  
+  let collectDiagnostics = sfExplain in typeClass.sym.flags
 
   if collectDiagnostics:
     oldWriteHook = m.c.config.writelnHook
@@ -2489,6 +2489,7 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
           else:
             incrIndexType(container.typ)
           if n[a].kind == nkError:
+            # debug arg
             noMatch()
           container.add n[a]
         else:
@@ -2499,6 +2500,12 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
                                     n[a], nOrig[a])
 
           if arg == nil or arg.kind == nkError or n[a].kind == nkError:
+            # debug arg
+            if "since" in $n[0]:
+              debug n
+              debug arg
+              debug m.call
+              debug n[a]
             noMatch()
           if m.baseTypeMatch:
             assert formal.typ.kind == tyVarargs

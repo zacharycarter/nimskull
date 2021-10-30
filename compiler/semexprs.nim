@@ -1341,8 +1341,6 @@ proc semSym(c: PContext, n: PNode, sym: PSym, flags: TExprFlags): PNode =
       #      PSym so the error is in the ast field
       result = s.ast
     else:
-      # if `??`(c.config, s.info, "tundeclared_routine.nim"):
-      #   debug s
       let info = getCallLineInfo(n)
       markUsed(c, info, s)
       onUse(info, s)

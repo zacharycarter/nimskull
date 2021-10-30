@@ -1233,7 +1233,6 @@ proc typeSectionRightSidePass(c: PContext, n: PNode) =
       elif t != s.typ and (s.typ == nil or s.typ.kind != tyAlias):
         # this can happen for e.g. tcan_alias_specialised_generic:
         assignType(s.typ, t)
-        #debug s.typ
       s.ast = a
       popOwner(c)
       # If the right hand side expression was a macro call we replace it with

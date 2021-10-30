@@ -310,8 +310,7 @@ proc bracketNotFoundError(c: PContext; n: PNode) =
     if symx.kind in routineKinds:
       errors.add(CandidateError(sym: symx,
                                 firstMismatch: MismatchInfo(),
-                                diagnostics: @[],
-                                enabled: false))
+                                diagnostics: @[]))
     symx = nextOverloadIter(o, c, headSymbol)
   if errors.len == 0:
     localError(c.config, n.info, "could not resolve: " & $n)
@@ -619,16 +618,18 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
 
   if r.state == csMatch:
     # this may be triggered, when the explain pragma is used
-    if errors.len > 0:
+    # if r.diagnosticsEnabled or errors.len > 0 and r.hasFauxMatch:
+    if r.diagnosticsEnabled and errors.len > 0:
+      echo $errors
       let (_, candidates) = presentFailedCandidates(c, n, errors)
       message(c.config, n.info, hintUserRaw,
               "Non-matching candidates for " & renderTree(n) & "\n" &
               candidates)
     result = semResolvedCall(c, r, n, flags)
-  elif r.call != nil and r.call.kind == nkError:
-    result = r.call
   elif efNoUndeclared notin flags:
     result = notFoundError(c, n, errors)
+  elif r.call != nil and r.call.kind == nkError:
+    result = r.call
   else:
     result = r.call
 

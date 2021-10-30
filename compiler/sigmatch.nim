@@ -33,7 +33,6 @@ type
     sym*: PSym
     firstMismatch*: MismatchInfo
     diagnostics*: seq[string]
-    enabled*: bool
 
   CandidateErrors* = seq[CandidateError]
 
@@ -2041,6 +2040,16 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
   let oldInheritancePenalty = m.inheritancePenalty
   var r = typeRel(m, f, a)
 
+  # let foo = m.calleeSym != nil and "since" in $m.calleeSym
+  # if foo:
+  #   echo $r
+  #   debug f
+  #   debug a
+  #   debug arg
+  #   debug argSemantized
+  #   debug argOrig
+  #   writeStackTrace()
+
   # This special typing rule for macros and templates is not documented
   # anywhere and breaks symmetry. It's hard to get rid of though, my
   # custom seqs example fails to compile without this:
@@ -2058,6 +2067,10 @@ proc paramTypesMatchAux(m: var TCandidate, f, a: PType,
         arg.typ.n
       else:
         argSemantized # argOrig
+    # if foo:
+    #   echo "aaaaaaaa"
+    #   debug result
+    #   echo "bbbbbbb"
     return
 
   # If r == isBothMetaConvertible then we rerun typeRel.
@@ -2495,17 +2508,26 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
         else:
           m.baseTypeMatch = false
           m.typedescMatched = false
+          # if "since" in $n[0]:
+          #   echo "n[a] - before"
+          #   debug n[a]
           n[a] = prepareOperand(c, formal.typ, n[a])
+          # if "since" in $n[0]:
+            # echo "entering: ", $n[0]
+          #   echo "n[a] - after"
+          #   debug n[a]
           arg = paramTypesMatch(m, formal.typ, n[a].typ,
                                     n[a], nOrig[a])
 
           if arg == nil or arg.kind == nkError or n[a].kind == nkError:
             # debug arg
-            if "since" in $n[0]:
-              debug n
-              debug arg
-              debug m.call
-              debug n[a]
+            # if "since" in $n[0]:
+              # echo "leaving: ", $n[0]
+              # writeStackTrace()
+            #   debug n
+            #   debug arg
+            #   debug m.call
+            #   debug n[a]
             noMatch()
           if m.baseTypeMatch:
             assert formal.typ.kind == tyVarargs

@@ -31,6 +31,7 @@
 ##   structure on the side instead of directly in the node
 
 import ast
+from options import ConfigRef
 
 type
   ErrorKind* {.pure.} = enum ## expand as you need.
@@ -61,7 +62,7 @@ type
       ## one or more issues encountered with object constructor
     
     # General Type Checks
-    ExpressionHasNoType 
+    ExpressionHasNoType
       ## an expression has not type or is ambiguous
     
     WrappedError
@@ -119,7 +120,6 @@ proc newErrorAux(
   ## given `inst` as to where it was instanced int he compiler.
   assert wrongNode != nil, "can't have a nil node for `wrongNode`"
 
-  let inst = instLoc()
   result = newNodeIT(nkError, wrongNode.info,
                      newType(tyError, ItemId(module: -2, item: -1), nil))
 
@@ -139,7 +139,12 @@ proc newErrorAux(
 
   for a in args: result.add a
 
-proc newError*(wrongNode: PNode; k: ErrorKind; args: varargs[PNode]): PNode =
+proc newErrorActual(
+    wrongNode: PNode;
+    k: ErrorKind;
+    inst: InstantiationInfo,
+    args: varargs[PNode]
+  ): PNode =
   ## create an `nkError` node with error `k`, with additional error `args` and
   ## given `inst` as to where it was instanced int he compiler.
   assert wrongNode != nil, "can't have a nil node for `wrongNode`"
@@ -147,10 +152,23 @@ proc newError*(wrongNode: PNode; k: ErrorKind; args: varargs[PNode]): PNode =
   let inst = instLoc()
   result = newErrorAux(wrongNode, k, inst, args)
 
-proc newError*(wrongNode: PNode; msg: string): PNode =
+proc newErrorActual(
+    wrongNode: PNode;
+    msg: string,
+    inst: InstantiationInfo
+  ): PNode =
   ## create an `nkError` node with a `CustomError` message `msg`
   newErrorAux(
     wrongNode, CustomError, instLoc(), newStrNode(msg, wrongNode.info))
+
+template newError*(wrongNode: PNode; k: ErrorKind; args: varargs[PNode]): PNode =
+  ## create an `nkError` node with error `k`, with additional error `args` and
+  ## given `inst` as to where it was instanced int he compiler.
+  newErrorActual(wrongNode, k, instLoc(), args)
+
+template newError*(wrongNode: PNode; msg: string): PNode =
+  ## create an `nkError` node with a `CustomError` message `msg`
+  newErrorActual(wrongNode, msg, instLoc())
 
 proc wrapErrorInSubTree*(wrongNodeContainer: PNode): PNode =
   ## `wrongNodeContainer` doesn't directly have an error but one exists further
@@ -159,3 +177,30 @@ proc wrapErrorInSubTree*(wrongNodeContainer: PNode): PNode =
   var e = errorSubNode(wrongNodeContainer)
   assert e != nil, "there must be an error node within"
   result = newErrorAux(wrongNodeContainer, WrappedError, instLoc())
+
+proc buildErrorList(n: PNode, errs: var seq[PNode]) =
+  ## creates a list (`errs` seq) from least specific to most specific
+  case n.kind
+  of nkEmpty..nkNilLit:
+    discard
+  of nkError:
+    errs.add n
+    buildErrorList(n[wrongNodePos], errs)
+  else:
+    for i in countdown(n.len - 1, 0):
+      buildErrorList(n[i], errs)
+
+iterator walkErrors*(config: ConfigRef; n: PNode): PNode =
+  ## traverses previous errors and yields errors from  innermost to outermost.
+  ## this is a linear traversal and two, or more, sibling errors will result in
+  ## only the first error (per `PNode.sons`) being yielded.
+  assert n != nil
+  var errNodes: seq[PNode] = @[]
+  buildErrorList(n, errNodes)
+  
+  # report from last to first (deepest in tree to highest)
+  for i in 1..errNodes.len:
+    # reverse index so we go from the innermost to outermost
+    let e = errNodes[^i]
+    if e.errorKind == WrappedError: continue
+    yield e

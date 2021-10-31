@@ -13,7 +13,7 @@
 import
   intsets, ast, astalgo, semdata, types, msgs, renderer, lookups, semtypinst,
   magicsys, idents, lexer, options, parampatterns, strutils, trees,
-  linter, lineinfos, lowerings, modulegraphs, concepts
+  linter, lineinfos, lowerings, modulegraphs, concepts, errorhandling
 
 type
   MismatchKind* = enum
@@ -33,6 +33,7 @@ type
     sym*: PSym
     firstMismatch*: MismatchInfo
     diagnostics*: seq[string]
+    isDiagnostic*: bool
 
   CandidateErrors* = seq[CandidateError]
 
@@ -729,10 +730,9 @@ proc matchUserTypeClass*(m: var TCandidate; ff, a: PType): PType =
     diagnostics: seq[string]
     errorPrefix: string
     flags: TExprFlags = {}
-  
-  let collectDiagnostics = sfExplain in typeClass.sym.flags
+  m.diagnosticsEnabled = m.diagnosticsEnabled or sfExplain in typeClass.sym.flags
 
-  if collectDiagnostics:
+  if m.diagnosticsEnabled:
     oldWriteHook = m.c.config.writelnHook
     # XXX: we can't write to m.diagnostics directly, because
     # Nim doesn't support capturing var params in closures
@@ -746,7 +746,7 @@ proc matchUserTypeClass*(m: var TCandidate; ff, a: PType): PType =
 
   var checkedBody = c.semTryExpr(c, body.copyTree, flags)
 
-  if collectDiagnostics:
+  if m.diagnosticsEnabled:
     m.c.config.writelnHook = oldWriteHook
     for msg in diagnostics:
       m.diagnostics.add msg
@@ -2419,7 +2419,7 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
         localError(c.config, n[a].info, "named parameter has to be an identifier")
         noMatch()
       formal = getNamedParamFromList(m.callee.n, n[a][0].ident)
-      if formal == nil:
+      if formal == nil or formal.kind == skError:
         # no error message!
         noMatch()
       if containsOrIncl(marker, formal.position):
@@ -2473,7 +2473,7 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
           n[a] = prepareOperand(c, formal.typ, n[a])
           arg = paramTypesMatch(m, formal.typ, n[a].typ,
                                     n[a], nOrig[a])
-          if arg != nil and arg.kind != nkError  and m.baseTypeMatch and container != nil:
+          if arg != nil and arg.kind != nkError and m.baseTypeMatch and container != nil:
             container.add arg
             incrIndexType(container.typ)
             checkConstraint(n[a])

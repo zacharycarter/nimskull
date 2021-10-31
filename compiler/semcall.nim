@@ -63,6 +63,7 @@ proc pickBestCandidate(c: PContext, headSymbol: PNode,
                        errors: var CandidateErrors,
                        diagnosticsFlag: bool,
                        errorsEnabled: bool, flags: TExprFlags) =
+  assert efExplain in flags == diagnosticsFlag, "why do you not match"
   var o: TOverloadIter
   var sym = initOverloadIter(o, c, headSymbol)
   var scope = o.lastOverloadScope
@@ -107,10 +108,14 @@ proc pickBestCandidate(c: PContext, headSymbol: PNode,
           if cmp < 0: best = z   # x is better than the best so far
           elif cmp == 0: alt = z # x is as good as the best so far
       elif errorsEnabled or z.diagnosticsEnabled:
+        # XXX: Collect diagnostics for matching, but not winning overloads too?
         errors.add(CandidateError(
           sym: sym,
           firstMismatch: z.firstMismatch,
-          diagnostics: z.diagnostics))
+          diagnostics: z.diagnostics,
+          isDiagnostic: z.diagnosticsEnabled or efExplain in flags
+          ))
+
     else:
       # Symbol table has been modified. Restart and pre-calculate all syms
       # before any further candidate init and compare. SLOW, but rare case.
@@ -199,11 +204,11 @@ proc presentFailedCandidates(c: PContext, n: PNode, errors: CandidateErrors):
         filterOnlyFirst = true
         break
 
-  var maybeWrongSpace = false
-
-  var candidatesAll: seq[string]
-  var candidates = ""
-  var skipped = 0
+  var
+    maybeWrongSpace = false
+    candidatesAll: seq[string]
+    candidates = ""
+    skipped = 0
   for err in errors:
     candidates.setLen 0
     if filterOnlyFirst and err.firstMismatch.arg == 1:
@@ -619,17 +624,16 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
   if r.state == csMatch:
     # this may be triggered, when the explain pragma is used
     # if r.diagnosticsEnabled or errors.len > 0 and r.hasFauxMatch:
-    if r.diagnosticsEnabled and errors.len > 0:
-      echo $errors
+    if (r.diagnosticsEnabled or efExplain in flags) and errors.len > 0:
       let (_, candidates) = presentFailedCandidates(c, n, errors)
       message(c.config, n.info, hintUserRaw,
               "Non-matching candidates for " & renderTree(n) & "\n" &
               candidates)
     result = semResolvedCall(c, r, n, flags)
-  elif efNoUndeclared notin flags:
-    result = notFoundError(c, n, errors)
   elif r.call != nil and r.call.kind == nkError:
     result = r.call
+  elif efNoUndeclared notin flags:
+    result = notFoundError(c, n, errors)
   else:
     result = r.call
 

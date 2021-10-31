@@ -415,6 +415,8 @@ proc fixupStaticType(c: PContext, n: PNode) =
                 # Consider using `n.copyTree`
 
 proc isOpImpl(c: PContext, n: PNode, flags: TExprFlags): PNode =
+  ## implements `is`, for `x is Y` where x is an expression and `Y` is a type
+  ## or an expression whose type is compared with `x`'s type.
   internalAssert c.config,
     n.len == 3 and
     n[1].typ != nil and
@@ -2220,7 +2222,8 @@ proc tryExpr(c: PContext, n: PNode, flags: TExprFlags = {}): PNode =
     result = semExpr(c, n, flags)
     if result != nil and efNoSem2Check notin flags:
       trackStmt(c, c.module, result, isTopLevel = false)
-    if c.config.errorCounter != oldErrorCount:
+    if c.config.errorCounter != oldErrorCount and
+       result != nil and result.kind != nkError:
       result = nil
   except ERecoverableError:
     discard

@@ -265,7 +265,7 @@ proc presentFailedCandidates(c: PContext, n: PNode, errors: CandidateErrors):
           n.kind == nkCommand:
         maybeWrongSpace = true
     for diag in err.diagnostics:
-      candidates.add(diag & "\n")
+      candidates.add(errorToString(c.config, diag) & "\n")
     candidatesAll.add candidates
   candidatesAll.sort # fix #13538
   candidates = join(candidatesAll)

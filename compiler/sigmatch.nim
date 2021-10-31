@@ -28,12 +28,21 @@ type
 
   TCandidateState* = enum
     csEmpty, csMatch, csNoMatch
+  
+  CandidateDiagnostic* = PNode
+    ## PNode is only ever an `nkError` kind, often converted to a string for
+    ## display purpopses
+  CandidateDiagnostics* = seq[CandidateDiagnostic]
+    ## list of diagnostics as part of errors or other information for Candidate
+    ## overload resolution and what not
 
   CandidateError* = object
     sym*: PSym
     firstMismatch*: MismatchInfo
-    diagnostics*: seq[string]
+    diagnostics*: CandidateDiagnostics
     isDiagnostic*: bool
+      ## is this is a diagnostic (true) or an error (false) that occurred
+      ## xxx: this might be a terrible idea and we could get rid of it
 
   CandidateErrors* = seq[CandidateError]
 
@@ -67,7 +76,7 @@ type
                               # matching. they will be reset if the matching
                               # is not successful. may replace the bindings
                               # table in the future.
-    diagnostics*: seq[string] # \
+    diagnostics*: CandidateDiagnostics # \
                               # when diagnosticsEnabled, the matching process
                               # will collect extra diagnostics that will be
                               # displayed to the user.
@@ -727,30 +736,58 @@ proc matchUserTypeClass*(m: var TCandidate; ff, a: PType): PType =
 
   var
     oldWriteHook: typeof(m.c.config.writelnHook)
-    diagnostics: seq[string]
+    oldStructuredHook: typeof(m.c.config.structuredErrorHook)
+    # diagnostics: seq[string]
+    diagnostics: CandidateDiagnostics
     errorPrefix: string
     flags: TExprFlags = {}
+    writeHookCount: int
+    structuredHookCount: int
   m.diagnosticsEnabled = m.diagnosticsEnabled or sfExplain in typeClass.sym.flags
 
   if m.diagnosticsEnabled:
     oldWriteHook = m.c.config.writelnHook
+    oldStructuredHook = m.c.config.structuredErrorHook
     # XXX: we can't write to m.diagnostics directly, because
     # Nim doesn't support capturing var params in closures
     diagnostics = @[]
     flags = {efExplain}
+    m.c.config.structuredErrorHook =
+      proc (c: ConfigRef; info: TLineInfo; s: string; sev: Severity) =
+        inc structuredHookCount
+        if errorPrefix.len == 0:
+          errorPrefix = typeClass.sym.name.s & ":"
+        let msg = s.replace("Error:", errorPrefix)
+        if oldStructuredHook != nil:
+          oldStructuredHook(c, info, msg, sev)
+        let e = newError(body, msg)
+        e.info = info
+        diagnostics.add e
     m.c.config.writelnHook = proc (s: string) =
-      if errorPrefix.len == 0: errorPrefix = typeClass.sym.name.s & ":"
-      let msg = s.replace("Error:", errorPrefix)
-      if oldWriteHook != nil: oldWriteHook msg
-      diagnostics.add msg
+      inc writeHookCount
+      if oldWriteHook != nil: oldWriteHook s
+      # if errorPrefix.len == 0: errorPrefix = typeClass.sym.name.s & ":"
+      # let msg = s.replace("Error:", errorPrefix)
+      # diagnostics.add msg
 
   var checkedBody = c.semTryExpr(c, body.copyTree, flags)
 
   if m.diagnosticsEnabled:
+    m.c.config.structuredErrorHook = oldStructuredHook
     m.c.config.writelnHook = oldWriteHook
-    for msg in diagnostics:
-      m.diagnostics.add msg
+
+    echo "Write Line Hook: ", writeHookCount, " Structured Hook: ", structuredHookCount
+
+    if checkedBody != nil and checkedBody.kind == nkError:
+      debug checkedBody
+      for e in m.c.config.walkErrors(checkedBody):
+        m.diagnostics.add e
+    for d in diagnostics:
+      m.diagnostics.add d
       m.diagnosticsEnabled = true
+    # for msg in diagnostics:
+    #   m.diagnostics.add msg
+    #   m.diagnosticsEnabled = true
 
   if checkedBody == nil: return nil
 

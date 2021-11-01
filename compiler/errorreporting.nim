@@ -7,6 +7,10 @@ export compilerInstInfo, walkErrors
 # of what the contract is with the subtleties around line and column info
 # overloading
 
+proc `$`(info: InstantiationInfo): string =
+  ## prints the compiler line info in `filepath(line, column)` format
+  "$1($2, $3)" % [ info.filename, $info.line.int, $info.column.int ]
+
 proc errorToString*(
     config: ConfigRef; n: PNode, rf = {renderWithoutErrorPrefix}
   ): string =
@@ -17,6 +21,8 @@ proc errorToString*(
   case ErrorKind(n[errorKindPos].intVal)
   of CustomError:
     result = n[firstArgPos].strVal
+  of CustomPrintMsgAndNodeError:
+    result = "$1$2" % [ n[firstArgPos].strVal, n[wrongNodePos].renderTree(rf) ]
   of RawTypeMismatchError:
     result = "type mismatch"
   of CallTypeMismatch:
@@ -78,6 +84,8 @@ proc errorToString*(
     result = "expression '$1' has no type (or is ambiguous)" % [
         n[firstArgPos].renderTree(rf)
       ]
+  of InvalidPragma:
+    result = "invalid pragma: $1" % wrongNode.renderTree(rf)
   of WrappedError:
     result = ""
 

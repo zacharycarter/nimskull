@@ -36,6 +36,8 @@ from options import ConfigRef
 type
   ErrorKind* {.pure.} = enum ## expand as you need.
     CustomError
+    CustomPrintMsgAndNodeError
+      ## just like custom error, prints a message and renders wrongNode
     RawTypeMismatchError
 
     # Call
@@ -65,6 +67,10 @@ type
     ExpressionHasNoType
       ## an expression has not type or is ambiguous
     
+    # Pragma
+    InvalidPragma
+      ## supllied user pragma is invalid
+
     WrappedError
       ## there is no meaningful error to construct, but there is an error
       ## further down the AST that invalidates the whole
@@ -149,7 +155,6 @@ proc newErrorActual(
   ## given `inst` as to where it was instanced int he compiler.
   assert wrongNode != nil, "can't have a nil node for `wrongNode`"
 
-  let inst = instLoc()
   result = newErrorAux(wrongNode, k, inst, args)
 
 proc newErrorActual(
@@ -159,16 +164,25 @@ proc newErrorActual(
   ): PNode =
   ## create an `nkError` node with a `CustomError` message `msg`
   newErrorAux(
-    wrongNode, CustomError, instLoc(), newStrNode(msg, wrongNode.info))
+    wrongNode, CustomError, inst, newStrNode(msg, wrongNode.info))
 
 template newError*(wrongNode: PNode; k: ErrorKind; args: varargs[PNode]): PNode =
   ## create an `nkError` node with error `k`, with additional error `args` and
   ## given `inst` as to where it was instanced int he compiler.
-  newErrorActual(wrongNode, k, instLoc(), args)
+  newErrorActual(wrongNode, k, instantiationInfo(-1, fullPaths = true), args)
 
 template newError*(wrongNode: PNode; msg: string): PNode =
   ## create an `nkError` node with a `CustomError` message `msg`
-  newErrorActual(wrongNode, msg, instLoc())
+  newErrorActual(wrongNode, msg, instantiationInfo(-1, fullPaths = true))
+
+template newCustomErrorMsgAndNode*(wrongNode: PNode; msg: string): PNode =
+  ## create an `nkError` node with a `CustomMsgError` message `msg`
+  newErrorActual(
+    wrongNode,
+    CustomPrintMsgAndNodeError,
+    instantiationInfo(-1, fullPaths = true),
+    newStrNode(msg, wrongNode.info)
+  )
 
 proc wrapErrorInSubTree*(wrongNodeContainer: PNode): PNode =
   ## `wrongNodeContainer` doesn't directly have an error but one exists further

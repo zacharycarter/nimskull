@@ -88,6 +88,9 @@ proc errorToString*(
     result = "invalid pragma: $1" % wrongNode.renderTree(rf)
   of WrappedError:
     result = ""
+  
+  # XXX: temporary, remove before merging
+  result = result & " compiler error origin: " & $n.compilerInstInfo()
 
 iterator walkErrorsOld*(config: ConfigRef; n: PNode): PNode {.
   deprecated: "linear error traversal is likely not useful".} =

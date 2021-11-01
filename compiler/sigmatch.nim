@@ -736,60 +736,41 @@ proc matchUserTypeClass*(m: var TCandidate; ff, a: PType): PType =
 
   var
     oldWriteHook: typeof(m.c.config.writelnHook)
-    oldStructuredHook: typeof(m.c.config.structuredErrorHook)
-    # diagnostics: seq[string]
     diagnostics: CandidateDiagnostics
     errorPrefix: string
     flags: TExprFlags = {}
-    writeHookCount: int
-    structuredHookCount: int
-  m.diagnosticsEnabled = m.diagnosticsEnabled or sfExplain in typeClass.sym.flags
+  let collectDiagnostics = m.diagnosticsEnabled or sfExplain in typeClass.sym.flags
 
-  if m.diagnosticsEnabled:
+  if collectDiagnostics:
     oldWriteHook = m.c.config.writelnHook
-    oldStructuredHook = m.c.config.structuredErrorHook
     # XXX: we can't write to m.diagnostics directly, because
     # Nim doesn't support capturing var params in closures
     diagnostics = @[]
     flags = {efExplain}
-    m.c.config.structuredErrorHook =
-      proc (c: ConfigRef; info: TLineInfo; s: string; sev: Severity) =
-        inc structuredHookCount
-        if errorPrefix.len == 0:
-          errorPrefix = typeClass.sym.name.s & ":"
-        let msg = s.replace("Error:", errorPrefix)
-        if oldStructuredHook != nil:
-          oldStructuredHook(c, info, msg, sev)
-        let e = newError(body, msg)
-        e.info = info
-        diagnostics.add e
     m.c.config.writelnHook = proc (s: string) =
-      inc writeHookCount
-      if oldWriteHook != nil: oldWriteHook s
-      # if errorPrefix.len == 0: errorPrefix = typeClass.sym.name.s & ":"
-      # let msg = s.replace("Error:", errorPrefix)
-      # diagnostics.add msg
+      if errorPrefix.len == 0:
+        errorPrefix = typeClass.sym.name.s & ":"
+      let msg = s.replace("Error:", errorPrefix)
+      if oldWriteHook != nil:
+        oldWriteHook msg
+      let e = newError(body, msg)
+      diagnostics.add e
 
   var checkedBody = c.semTryExpr(c, body.copyTree, flags)
 
-  if m.diagnosticsEnabled:
-    m.c.config.structuredErrorHook = oldStructuredHook
+  if collectDiagnostics:
     m.c.config.writelnHook = oldWriteHook
 
-    echo "Write Line Hook: ", writeHookCount, " Structured Hook: ", structuredHookCount
-
-    if checkedBody != nil and checkedBody.kind == nkError:
-      debug checkedBody
-      for e in m.c.config.walkErrors(checkedBody):
-        m.diagnostics.add e
+    # if checkedBody != nil:
+    #   for e in m.c.config.walkErrors(checkedBody):
+    #     m.diagnostics.add e
     for d in diagnostics:
       m.diagnostics.add d
       m.diagnosticsEnabled = true
-    # for msg in diagnostics:
-    #   m.diagnostics.add msg
-    #   m.diagnosticsEnabled = true
 
-  if checkedBody == nil: return nil
+  if checkedBody == nil or checkedBody.kind == nkError:
+    # xxx: return nil on nkError doesn't seem quite right, but this is a type
+    return nil
 
   # The inferrable type params have been identified during the semTryExpr above.
   # We need to put them in the current sigmatch's binding table in order for them
@@ -2354,9 +2335,22 @@ proc prepareOperand(c: PContext; a: PNode): PNode =
     considerGenSyms(c, result)
 
 proc prepareNamedParam(a: PNode; c: PContext) =
-  if a[0].kind != nkIdent:
-    var info = a[0].info
-    a[0] = newIdentNode(considerQuotedIdent(c, a[0]), info)
+  ## set the correct ident node, or nkError, in the 0th position for this
+  ## named param
+  case a[0].kind
+  of nkIdent, nkError:
+    discard "nothing to do"
+  else:
+    let
+      info = a[0].info
+      (i, err) = considerQuotedIdent2(c, a[0])
+    # a[0] = newIdentNode(considerQuotedIdent(c, a[0]), info)
+    a[0] =
+      if err.isNil():
+        newIdentNode(i, info)
+      else:
+        err
+
 
 proc arrayConstr(c: PContext, n: PNode): PType =
   result = newTypeS(tyArray, c)
@@ -2452,7 +2446,7 @@ proc matchesAux(c: PContext, n, nOrig: PNode, m: var TCandidate, marker: var Int
       m.firstMismatch.kind = kUnknownNamedParam
       # check if m.callee has such a param:
       prepareNamedParam(n[a], c)
-      if n[a][0].kind != nkIdent:
+      if n[a].kind == nkError or n[a][0].kind != nkIdent:
         localError(c.config, n[a].info, "named parameter has to be an identifier")
         noMatch()
       formal = getNamedParamFromList(m.callee.n, n[a][0].ident)

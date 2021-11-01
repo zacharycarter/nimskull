@@ -661,6 +661,9 @@ proc qualifiedLookUp2*(c: PContext, n: PNode, flags: set[TLookupFlag]): PSym =
   ## XXX: currently skError is just a const for skUnknown which has many uses,
   ##      once things are cleaner, create a proper skError and use that instead
   ##      of a tuple return.
+  ## 
+  ## XXX: maybe remove the flags for ambiguity and undeclared and let the call
+  ##      sites figure it out instead?
   const allExceptModule = {low(TSymKind)..high(TSymKind)} - {skModule, skPackage}
   
   proc symFromCandidates(
@@ -729,8 +732,13 @@ proc qualifiedLookUp2*(c: PContext, n: PNode, flags: set[TLookupFlag]): PSym =
       else:
         result = errorAmbiguousUseQualifier(c, ident, n, candidates)
 
-    # XXX: legacy calls above can return an `skError` without the `typ` set
-    if result.kind == skError and result.typ.isNil:
+    if result == nil:
+      if checkUndeclared in flags:
+        result = errorUndeclaredIdentifierWithHint(c, n, ident.s)
+      else:
+        discard
+    elif result.kind == skError and result.typ.isNil:
+      # XXX: legacy calls above can return an `skError` without the `typ` set
       result.typ = c.errorType
 
     c.isAmbiguous = amb

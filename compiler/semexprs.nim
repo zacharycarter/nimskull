@@ -1339,7 +1339,7 @@ proc semSym(c: PContext, n: PNode, sym: PSym, flags: TExprFlags): PNode =
     result = newSymNode(s, n.info)
   else:
     if s.kind == skError and not s.ast.isNil and s.ast.kind == nkError:
-      # XXX: at the time or writing only `lookups.qualifiedLookUp2` setup the
+      # XXX: at the time or writing only `lookups.qualifiedLookUp2` sets up the
       #      PSym so the error is in the ast field
       result = s.ast
     else:
@@ -1789,12 +1789,12 @@ proc semAsgn(c: PContext, n: PNode; mode=asgnNormal): PNode =
     if a == nil:
       result = buildOverloadedSubscripts(n[0], getIdent(c.cache, "[]="))
       result.add(n[1])
-      if mode == noOverloadedSubscript:
-        bracketNotFoundError(c, result)
-        return n
-      else:
-        result = semExprNoType(c, result)
-        return result
+      result =
+        if mode == noOverloadedSubscript:
+          bracketNotFoundError(c, n)
+        else:
+          semExprNoType(c, result)
+      return
   of nkCurlyExpr:
     # a{i} = x -->  `{}=`(a, i, x)
     result = buildOverloadedSubscripts(n[0], getIdent(c.cache, "{}="))
@@ -2936,8 +2936,13 @@ proc semExpr(c: PContext, n: PNode, flags: TExprFlags = {}): PNode =
     #  if gIdeCmd == ideCon and c.config.m.trackPos == n.info: suggestExprNoCheck(c, n)
     let mode = if nfDotField in n.flags: {} else: {checkUndeclared}
     c.isAmbiguous = false
-    var s = qualifiedLookUp(c, n[0], mode)
-    if s != nil:
+    var s = qualifiedLookUp2(c, n[0], mode)
+    if s != nil and
+      (s.kind != skError or s.ast == nil or s.ast.kind != nkError):
+      # xxx: currently `qualifiedLookup2` will set the s.ast field to nkError
+      #      if there was an nkError reported instead of the legacy localError
+      #      based flows we need to halt progress. This also needs to do a
+      #      better job of raising/handling the fact that we just got an error.
       #if c.config.cmd == cmdNimfix and n[0].kind == nkDotExpr:
       #  pretty.checkUse(n[0][1].info, s)
       case s.kind

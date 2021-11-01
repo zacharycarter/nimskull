@@ -12,7 +12,7 @@
 import
   os, condsyms, ast, astalgo, idents, semdata, msgs, renderer,
   wordrecg, ropes, options, strutils, extccomp, math, magicsys, trees,
-  types, lookups, lineinfos, pathutils, linter
+  types, lookups, lineinfos, pathutils, linter, errorhandling
 
 from ic / ic import addCompilerProc
 
@@ -767,8 +767,10 @@ proc semCustomPragma(c: PContext, n: PNode): PNode =
 
   let r = c.semOverloadedCall(c, callNode, n, {skTemplate}, {efNoUndeclared})
   if r.isNil or sfCustomPragma notin r[0].sym.flags:
-    invalidPragma(c, n)
-    return n
+    result = newError(c, n, InvalidPragma)
+    return
+    # invalidPragma(c, n)
+    # return n
 
   result = r
   # Transform the nkCall node back to its original form if possible

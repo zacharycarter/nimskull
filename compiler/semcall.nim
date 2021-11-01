@@ -304,9 +304,13 @@ proc notFoundError(c: PContext, n: PNode, errors: CandidateErrors): PNode =
   msg.add('>')
   if candidates != "":
     msg.add("\n" & errButExpected & "\n" & candidates)
-  result = newError(n, msg & "\nexpression: " & n.renderTree({renderWithoutErrorPrefix}))
+  result =
+    newError(
+      n,
+      msg & "\nexpression: " & n.renderTree({renderWithoutErrorPrefix})
+    )
 
-proc bracketNotFoundError(c: PContext; n: PNode) =
+proc bracketNotFoundError(c: PContext; n: PNode): PNode =
   var errors: CandidateErrors = @[]
   var o: TOverloadIter
   let headSymbol = n[0]
@@ -317,17 +321,11 @@ proc bracketNotFoundError(c: PContext; n: PNode) =
                                 firstMismatch: MismatchInfo(),
                                 diagnostics: @[]))
     symx = nextOverloadIter(o, c, headSymbol)
-  if errors.len == 0:
-    localError(c.config, n.info, "could not resolve: " & $n)
-  else:
-    # XXX: cascade nkError node through the return value,
-    # XXX: can't report here because generating and reporting are separate
-    # notFoundError(c, n, errors)
-    # for e in walkErrors(c.config, notFoundError(c, n, errors)):
-    #   localError(c.config, e.info, errorToString(c.config, e))
-    
-    let e = notFoundError(c, n, errors)
-    localError(c.config, e.info, errorToString(c.config, e))
+  result =
+    if errors.len == 0:
+      newCustomErrorMsgAndNode(n, "could not resolve: ")
+    else:
+      notFoundError(c, n, errors)
 
 proc getMsgDiagnostic(c: PContext, flags: TExprFlags, n, origF: PNode): string =
   # for dotField calls, eg: `foo.bar()`, set f for nicer messages
@@ -623,7 +621,6 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
 
   if r.state == csMatch:
     # this may be triggered, when the explain pragma is used
-    # if r.diagnosticsEnabled or errors.len > 0 and r.hasFauxMatch:
     if (r.diagnosticsEnabled or efExplain in flags) and errors.len > 0:
       let (_, candidates) = presentFailedCandidates(c, n, errors)
       message(c.config, n.info, hintUserRaw,
@@ -636,61 +633,6 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
     result = notFoundError(c, n, errors)
   else:
     result = r.call
-
-  # elif implicitDeref in c.features and canDeref(n):
-  #   # try to deref the first argument and then try overloading resolution again:
-  #   #
-  #   # XXX: why is this here?
-  #   # it could be added to the long list of alternatives tried
-  #   # inside `resolveOverloads` or it could be moved all the way
-  #   # into sigmatch with hidden conversion produced there
-  #   #
-  #   n[1] = n[1].tryDeref
-  #   var r = resolveOverloads(c, n, nOrig, filter, flags, errors)
-  #   if r.state == csMatch: result = semResolvedCall(c, r, n, flags)
-  #   else:
-  #     # get rid of the deref again for a better error message:
-  #     n[1] = n[1][0]
-  #     if efExplain notin flags:
-  #       # repeat the overload resolution,
-  #       # this time enabling all the diagnostic output (this should fail again)
-  #       # XXX: refactoring in progress: previously we discarded
-  #       #      semOverloadedCall's result, because we just wanted it to output
-  #       #      errors, now some errors are returned as nkError nodes, so we
-  #       #      handle those here.
-  #       if r.call != nil and r.call.kind == nkError:
-  #         result = r.call
-  #       if result != nil and result.kind != nkError:
-  #         # reset to nil otherwise we'll end up with broken ast, because we
-  #         # speculatively try different ops to see what works `tryOp '.'` in
-  #         # `resolveOverloads`
-  #         result = nil
-  #     elif efNoUndeclared notin flags:
-  #       result = notFoundError(c, n, errors)
-  #     else:
-  #       assert r.call.kind == nkError
-  #       result = r.call # xxx: hope this is nkError
-  # else:
-  #   if efExplain notin flags:
-  #     # repeat the overload resolution,
-  #     # this time enabling all the diagnostic output (this should fail again)
-  #     # XXX: refactoring in progress: previously we discarded
-  #     #      semOverloadedCall's result, because we just wanted it to output
-  #     #      errors, now some errors are returned as nkError nodes, so we
-  #     #      handle those here.
-  #     # debug r.call
-  #     if r.call != nil and r.call.kind == nkError:
-  #       result = r.call
-  #     if result != nil and result.kind != nkError:
-  #       # reset to nil otherwise we'll end up with broken ast, because we
-  #       # speculatively try different ops to see what works `tryOp '.'` in
-  #       # `resolveOverloads`
-  #       result = nil
-  #   elif efNoUndeclared notin flags:
-  #     result = notFoundError(c, n, errors)
-  #   else:
-  #     assert r.call.kind == nkError
-  #     result = r.call # xxx: hope this is nkError
 
 proc explicitGenericInstError(c: PContext; n: PNode): PNode =
   localError(c.config, getCallLineInfo(n), errCannotInstantiateX % renderTree(n))

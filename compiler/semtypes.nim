@@ -243,7 +243,11 @@ proc semRangeAux(c: PContext, n: PNode, prev: PType): PType =
 
   if not hasUnknownTypes:
     if not sameType(rangeT[0].skipTypes({tyRange}), rangeT[1].skipTypes({tyRange})):
-      typeMismatch(c.config, n.info, rangeT[0], rangeT[1], n)
+      # XXX: should this cascade and what about the follow-on statements like
+      #      the for loop, etc below?
+      let r = typeMismatch(c.config, n.info, rangeT[0], rangeT[1], n)
+      if r.kind == nkError:
+        localError(c.config, n.info, errorToString(c.config, r))
 
     elif not isOrdinalType(rangeT[0]) and rangeT[0].kind notin {tyFloat..tyFloat128} or
         rangeT[0].kind == tyBool:
@@ -1651,6 +1655,9 @@ proc applyTypeSectionPragmas(c: PContext; pragmas, operand: PNode): PNode =
           # recursion assures that this works for multiple macro annotations too:
           var r = semOverloadedCall(c, x, x, {skMacro, skTemplate}, {efNoUndeclared})
           if r != nil:
+            if r.kind == nkError:
+              localError(c.config, r.info, errorToString(c.config, r))
+              return
             doAssert r[0].kind == nkSym
             let m = r[0].sym
             case m.kind

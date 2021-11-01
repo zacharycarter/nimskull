@@ -10,7 +10,7 @@
 import
   intsets, ast, astalgo, msgs, renderer, magicsys, types, idents, trees,
   wordrecg, strutils, options, guards, lineinfos, semfold, semdata,
-  modulegraphs, varpartitions, typeallowed, nilcheck, errorhandling, tables
+  modulegraphs, varpartitions, typeallowed, nilcheck, errorreporting, tables
 
 when defined(useDfa):
   import dfa
@@ -1253,7 +1253,16 @@ proc track(tracked: PEffects, n: PNode) =
     for i in 1 ..< n.len: track(tracked, n[i])
     inc tracked.leftPartOfAsgn
   of nkError:
-    localError(tracked.config, n.info, errorToString(tracked.config, n))
+    for e in walkErrors(tracked.config, n):
+      liMessage(
+        conf  = tracked.config,
+        info  = e.info,
+        msg   = errGenerated,
+        arg   = errorToString(tracked.config, e),
+        eh    = doNothing,
+        info2 = e.compilerInstInfo
+      )
+      # localError(tracked.config, e.info, errorToString(tracked.config, e))
   else:
     for i in 0..<n.safeLen: track(tracked, n[i])
 

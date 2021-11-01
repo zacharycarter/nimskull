@@ -15,7 +15,7 @@ const
   errDiscardValueX = "value of type '$1' has to be used (or discarded)"
   errInvalidDiscard = "statement returns no value that can be discarded"
   errInvalidControlFlowX = "invalid control flow: $1"
-  errSelectorMustBeOfCertainTypes = "selector must be of an ordinal type, float or string"
+  errSelectorMustBeOfCertainTypes = "selector must be of an ordinal type, float, or string"
   errExprCannotBeRaised = "only a 'ref object' can be raised"
   errBreakOnlyInLoop = "'break' only allowed in loop construct"
   errExceptionAlreadyHandled = "exception already handled"
@@ -862,6 +862,9 @@ proc handleCaseStmtMacro(c: PContext; n: PNode; flags: TExprFlags): PNode =
     of skMacro: result = semMacroExpr(c, toExpand, toExpand, match, flags)
     of skTemplate: result = semTemplateExpr(c, toExpand, match, flags)
     else: result = nil
+  else:
+    assert r.call.kind == nkError
+    result = r.call # xxx: hope this is nkError
   # this would be the perfectly consistent solution with 'for loop macros',
   # but it kinda sucks for pattern matching as the matcher is not attached to
   # a type then:
@@ -935,7 +938,7 @@ proc semCase(c: PContext, n: PNode; flags: TExprFlags): PNode =
       result = handleCaseStmtMacro(c, n, flags)
       if result != nil:
         return result
-    localError(c.config, n[0].info, errSelectorMustBeOfCertainTypes)
+    result[0] = newError(n[0], errSelectorMustBeOfCertainTypes)
     return
   for i in 1..<n.len:
     setCaseContextIdx(c, i)
@@ -1230,7 +1233,6 @@ proc typeSectionRightSidePass(c: PContext, n: PNode) =
       elif t != s.typ and (s.typ == nil or s.typ.kind != tyAlias):
         # this can happen for e.g. tcan_alias_specialised_generic:
         assignType(s.typ, t)
-        #debug s.typ
       s.ast = a
       popOwner(c)
       # If the right hand side expression was a macro call we replace it with
@@ -1507,6 +1509,12 @@ proc semProcAnnotation(c: PContext, prc: PNode;
       # No matching macro was found but there's always the possibility this may
       # be a .pragma. template instead
       continue
+
+    # XXX: temporarily handle nkError here, rather than proper propagation.
+    #      this should be refactored over time.
+    if r.kind == nkError:
+      localError(c.config, r.info, errorToString(c.config, r))
+      return # the rest is likely too broken, don't bother continuing
 
     doAssert r[0].kind == nkSym
     let m = r[0].sym
@@ -2236,8 +2244,10 @@ proc inferConceptStaticParam(c: PContext, inferred, n: PNode) =
 proc semStmtList(c: PContext, n: PNode, flags: TExprFlags): PNode =
   result = n
   result.transitionSonsKind(nkStmtList)
-  var voidContext = false
-  var last = n.len-1
+  var
+    voidContext = false
+    last = n.len-1
+    hasError = false
   # by not allowing for nkCommentStmt etc. we ensure nkStmtListExpr actually
   # really *ends* in the expression that produces the type: The compiler now
   # relies on this fact and it's too much effort to change that. And arguably
@@ -2248,6 +2258,8 @@ proc semStmtList(c: PContext, n: PNode, flags: TExprFlags): PNode =
   for i in 0..<n.len:
     var x = semExpr(c, n[i], flags)
     n[i] = x
+    if efNoSemCheck notin flags and x.kind == nkError:
+      hasError = true
     if c.matchedConcept != nil and x.typ != nil and
         (nfFromTemplate notin n.flags or i != last):
       case x.typ.kind
@@ -2301,6 +2313,9 @@ proc semStmtList(c: PContext, n: PNode, flags: TExprFlags): PNode =
         not (result.comment[0] == '#' and result.comment[1] == '#'):
       # it is an old-style comment statement: we replace it with 'discard ""':
       prettybase.replaceComment(result.info)
+
+  if hasError:
+    result = wrapErrorInSubTree(result)
 
 proc semStmt(c: PContext, n: PNode; flags: TExprFlags): PNode =
   if efInTypeof in flags:
